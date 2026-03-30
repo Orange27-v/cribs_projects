@@ -31,8 +31,8 @@ backend.zip
 chatdb/Archive.zip
 *.log
 
-# --- Laravel / Backend (Entire Directory Ignored as Requested) ---
-/backend/
+# --- Laravel / Backend ---
+# Removing 'backend/' ignore rule to allow tracking of backend source code
 /backend/.env
 /backend/.env.bak
 /backend/.env.example
