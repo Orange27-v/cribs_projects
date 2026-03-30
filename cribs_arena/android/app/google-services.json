@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "599897304581",
+    "project_id": "cribsarenaapps",
+    "storage_bucket": "cribsarenaapps.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:599897304581:android:19334de5cfc451f3ae366c",
+        "android_client_info": {
+          "package_name": "com.cribsarena.cribsagent"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC4xgutAJjv9z8vw4ZHRsqx2pvvMQxa_oE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:599897304581:android:ff037ce081edf805ae366c",
+        "android_client_info": {
+          "package_name": "com.cribsarena.cribsarena"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC4xgutAJjv9z8vw4ZHRsqx2pvvMQxa_oE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

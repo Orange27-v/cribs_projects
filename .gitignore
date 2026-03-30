@@ -1,0 +1,51 @@
+# Root
+.DS_Store
+backend.zip
+*.log
+
+# Laravel (backend)
+/backend/vendor/
+/backend/storage/*.key
+/backend/storage/logs/
+/backend/storage/framework/cache/
+/backend/storage/framework/sessions/
+/backend/storage/framework/views/
+/backend/.env
+/backend/storage/app/*.json
+
+# Node.js (chatdb)
+/chatdb/node_modules/
+/chatdb/Archive.zip
+/chatdb/.env
+
+# Flutter / Dart
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub-proxy-settings
+.packages
+/cribs_arena/build/
+/cribs_arena/.dart_tool/
+/cribs_agents/build/
+/cribs_agents/.dart_tool/
+
+# Android
+.gradle/
+local.properties
+*.hprof
+*.jks
+*.keystore
+/cribs_arena/android/app/upload-keystore.jks
+/cribs_agents/android/app/upload-keystore.jks
+
+# References & Credentials
+/reference/*.json
+/reference/*.zip
+/reference/*.log
+
+# IDEs
+.idea/
+.vscode/
+*.iml
