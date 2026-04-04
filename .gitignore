@@ -14,17 +14,27 @@ Thumbs.db
 .idea/
 *.iml
 .cursor/
+.agent/
+!.agent/workflows/
+.gemini/
 *.code-workspace
 
 # --- Environment & Sensitive Files ---
 # Global ignore for environment files
 .env
 .env.*
+**/google-services.json
+**/GoogleService-Info.plist
+
+# Sensitive Credentials & Certificates
+password.md
+*.pem
+*.key
+*.crt
+*.p12
 *.jks
 *.keystore
 auth.json
-**/google-services.json
-**/GoogleService-Info.plist
 
 # --- Root Backups & Archives ---
 backend.zip
@@ -37,6 +47,7 @@ chatdb/Archive.zip
 /backend/.env.bak
 /backend/.env.example
 /backend/vendor/
+/backend/vendor.zip
 /backend/storage/
 /backend/node_modules/
 /backend/.phpunit.result.cache
