@@ -8,6 +8,7 @@ Thumbs.db
 *.swp
 *~
 .nfs*
+*.hprof
 
 # --- IDE / Editor ---
 .vscode/
@@ -76,10 +77,19 @@ build/
 # --- Android Specific ---
 .gradle/
 local.properties
+**/android/local.properties
+**/android/.gradle/
+**/android/captures/
+**/android/app/google-services.json
 
 # --- iOS Specific ---
 ios/.generated/
 DerivedData/
+**/ios/Pods/
+**/ios/.generated/
+**/ios/DerivedData/
+**/ios/Runner/GoogleService-Info.plist
+Icon?
 
 # --- References & Credentials ---
 # Ignoring the entire reference folder as it contains sensitive service account keys

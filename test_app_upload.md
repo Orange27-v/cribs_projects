@@ -105,3 +105,17 @@ android {
 *   **AAB Deployment**: Search: *"Flutter build appbundle and upload to play console"*
 *   **IAP Validation**: Search: *"Flutter In-App Purchase License Testing guide"*
 
+
+---
+
+## 6. Last Successful Build Summary (2026-03-30)
+
+### Actions Taken:
+- **Signing Configuration**: Configured `key.properties` and `build.gradle.kts` for both projects.
+- **Keystore Generation**: Generated new `upload-keystore.jks` files using the password `CribsArena@2026`.
+- **R8/Minification Fix**: Explicitly disabled minification (`isMinifyEnabled = false`) to resolve compilation blockers.
+- **Build Execution**: Successfully generated signed Production App Bundles (AAB) for both applications.
+
+### Final AAB Locations:
+- **Cribs Arena**: `cribs_arena/build/app/outputs/bundle/release/app-release.aab`
+- **Cribs Agents**: `cribs_agents/build/app/outputs/bundle/release/app-release.aab`

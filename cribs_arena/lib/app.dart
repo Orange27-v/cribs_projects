@@ -27,7 +27,7 @@ class CribsArenaApp extends StatelessWidget {
           navigatorKey: navigatorKey, // Use the passed navigatorKey
           navigatorObservers: [app_main.routeObserver], // Add RouteObserver
           title: 'Cribs Arena',
-          debugShowCheckedModeBanner: true,
+          debugShowCheckedModeBanner: false,
           theme: ThemeData(
             primarySwatch: Colors.indigo,
             scaffoldBackgroundColor: kGrey100,

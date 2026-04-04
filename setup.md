@@ -1,46 +1,96 @@
-# Deployment & Testing Guide (cPanel & Mobile)
+# Production Build Setup Guide (Flutter Android)
 
-## 1. Backend Deployment (cPanel)
-If you have already uploaded the updated `composer.json` and `composer.lock` to your server via cPanel, follow these steps to install the new `google/apiclient` package:
+This document provides a step-by-step record of the actions taken to configure and generate signed **Android App Bundles (AAB)** for **Cribs Arena** and **Cribs Agents**.
 
-### The Composer Command
-In your cPanel Terminal or SSH, navigate to your `backend` directory and run:
+---
+
+## 🏗️ 1. Keystore Generation
+A unique release keystore was generated for both projects to securely sign the applications for the Google Play Store.
+
+### Commands Used:
 ```bash
-composer install --no-dev
+# Generated for both /cribs_arena and /cribs_agents
+keytool -genkey -v -keystore android/app/upload-keystore.jks \
+  -storetype JKS -keyalg RSA -keysize 2048 -validity 10000 \
+  -alias upload -storepass [PASSWORD] -keypass [PASSWORD] \
+  -dname "CN=Cribs Arena, OU=Dev, O=Cribs Arena, L=Lagos, ST=Lagos, C=NG"
 ```
-*   **Why `install`?**: Since you uploaded the `.lock` file, `install` ensures the server installs the *exact* same version we used during development.
-*   **Why `--no-dev`?**: This is a production best practice; it keeps the server light by skipping development-only tools.
-
-### Post-Install Checklist
-1.  **Clear Cache**: Run `php artisan config:cache` to ensure Laravel sees your new `.env` variables.
-2.  **Permissions**: Ensure `storage/app/google-service-account.json` is present and readable.
-3.  **Logs**: Check `storage/logs/laravel.log` if you encounter any `500` errors during verification.
+*   **Keystore Location**: `android/app/upload-keystore.jks`
+*   **Alias**: `upload`
 
 ---
 
-## 2. Google Play Billing Testing
+## 🔑 2. Signing Properties Setup
+To keep credentials secure and easily manageable, a `key.properties` file was created in the `android/` directory of each project.
 
-### The "At Least Once" Rule (Mandatory)
-Before Google Play Billing will work on a real device, you **must upload at least one version** (AAB or APK) to the **Internal Testing Track** in the Play Console.
-
-1.  **Register App**: Create the app in Google Play Console.
-2.  **Upload Build**: Upload your build to the **Internal Testing Track**.
-3.  **Activate Products**: Ensure `cribs_agent_basic`, `cribs_agent_standard`, and `cribs_agent_premium` are created as "Subscriptions" and set to **Active**.
-4.  **Add License Testers**: Add your Google account email to *Setup -> License Testing* to avoid real charges.
-
-### Testing on a Physical Device
-1.  **USB Debugging**: Connect your phone and ensure USB debugging is on.
-2.  **Flutter Run**: Run `flutter run` from your computer. 
-3.  **Verification**: Tap a plan. A Google Play sheet should appear with a "Test Card" badge.
-4.  **Backend Connectivity**: If testing locally, use **Ngrok** to expose your local server so the phone can reach the verification API.
+**File Path**: `[Project Root]/android/key.properties`
+**Contents**:
+```properties
+storePassword=CribsArena@2026
+keyPassword=CribsArena@2026
+keyAlias=upload
+storeFile=upload-keystore.jks
+```
 
 ---
 
-## 3. Reference Files Checked
-- `backend/app/Http/Controllers/Agent/GoogleBillingController.php`
-- `backend/routes/agent.php`
-- `backend/config/app.php`
-- `backend/composer.json`
-- `backend/storage/app/google-service-account.json`
-- `cribs_agents/lib/services/plan_service.dart`
-- `cribs_agents/lib/screens/plans/plans_screen.dart`
+## ⚙️ 3. Gradle Configuration (`build.gradle.kts`)
+The Android build scripts were modified to automatically load the signing credentials during a release build.
+
+### 💉 Code Injected:
+```kotlin
+import java.util.Properties
+import java.io.FileInputStream
+
+// 1. Load properties from key.properties
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    // 2. Define signing configuration
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String?
+            keyPassword = keystoreProperties["keyPassword"] as String?
+            storeFile = keystoreProperties["storeFile"]?.let { file(it) }
+            storePassword = keystoreProperties["storePassword"] as String?
+        }
+    }
+
+    buildTypes {
+        release {
+            // 3. Apply the signing configuration
+            signingConfig = signingConfigs.getByName("release")
+            
+            // 🛠️ BUILD FIX: Disable minification to avoid R8 library conflicts
+            isMinifyEnabled = false
+            isShrinkResources = false
+        }
+    }
+}
+```
+
+---
+
+## 🛡️ 4. Resolving Build Blockers
+During the build process, we encountered an **R8 Minification Failure**. This was resolved by explicitly disabling code shrinking in the `build.gradle.kts` file:
+*   `isMinifyEnabled = false`
+*   `isShrinkResources = false`
+
+This ensures that all library references (Firebase, Pusher, etc.) remain intact without needing complex ProGuard rules.
+
+---
+
+## 🚀 5. Generation Commands
+To build the final production bundles, the following sequence was executed in each project root:
+
+1.  **Clean Cache**: `flutter clean`
+2.  **Sync Dependencies**: `flutter pub get`
+3.  **Build Bundle**: `flutter build appbundle --release`
+
+### 📍 Final File Locations:
+*   **Cribs Arena**: `cribs_arena/build/app/outputs/bundle/release/app-release.aab`
+*   **Cribs Agents**: `cribs_agents/build/app/outputs/bundle/release/app-release.aab`

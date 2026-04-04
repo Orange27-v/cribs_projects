@@ -20,6 +20,11 @@ subprojects {
 }
 
 subprojects {
+
+    tasks.withType<JavaCompile>().configureEach {
+        options.compilerArgs.add("-Xlint:none")
+    }
+
     if (project.name == "flutter_paystack") {
         val configureNamespace = {
             project.extensions.configure<com.android.build.gradle.LibraryExtension> {

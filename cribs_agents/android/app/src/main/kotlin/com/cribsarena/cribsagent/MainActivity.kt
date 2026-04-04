@@ -1,4 +1,4 @@
-package com.example.cribs_agent
+package com.cribsarena.cribsagent
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 

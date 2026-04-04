@@ -36,7 +36,7 @@ class _AppState extends State<App> {
             navigatorKey: widget.navigatorKey,
             navigatorObservers: [app_main.routeObserver],
             title: 'Cribs Agents',
-            debugShowCheckedModeBanner: true,
+            debugShowCheckedModeBanner: false,
             theme: ThemeData(
               primarySwatch: Colors.indigo,
               scaffoldBackgroundColor: kGrey100,
