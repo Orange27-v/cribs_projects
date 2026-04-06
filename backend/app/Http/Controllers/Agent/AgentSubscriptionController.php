@@ -120,7 +120,7 @@ class AgentSubscriptionController extends Controller
         // Fetch platform fee
         $platformFee = DB::table('platform_settings')
             ->where('key_name', 'platform_fee')
-            ->value('value') ?? 700.00; // Default to 700 if not set
+            ->value('value') ?? 300.00; // Default to 300 to match SQL fallback
 
         $totalAmount = $plan->price + $platformFee;
         $amountInKobo = $totalAmount * 100;
@@ -300,7 +300,7 @@ class AgentSubscriptionController extends Controller
         // Fetch platform fee
         $platformFee = DB::table('platform_settings')
             ->where('key_name', 'platform_fee')
-            ->value('value') ?? 700.00;
+            ->value('value') ?? 300.00;
 
         $totalAmount = $plan->price + $platformFee;
 

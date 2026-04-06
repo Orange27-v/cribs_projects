@@ -19,6 +19,11 @@ class PlanService {
   static List<ProductDetails> _products = [];
   static StreamSubscription<List<PurchaseDetails>>? _purchaseSubscription;
 
+  // New: Synchronization for IAP initialization
+  static final Completer<void> _initCompleter = Completer<void>();
+  static bool _initializationCalled = false;
+  static bool _isStoreAvailable = false;
+
   /// Map Google Product IDs to internal Plan Names
   static const Map<String, String> productMappings = {
     'cribs_agent_basic': 'Starter',
@@ -97,56 +102,88 @@ class PlanService {
 
   /// Initialize In-App Purchases and load products
   Future<void> initializeInAppPurchase() async {
+    if (_initializationCalled) return _initCompleter.future;
+    _initializationCalled = true;
+
     debugPrint('PlanService: Initializing In-App Purchase...');
-    
-    final bool available = await _inAppPurchase.isAvailable();
-    if (!available) {
-      debugPrint('PlanService: Google Play Store NOT available on this device');
-      return;
-    }
 
-    debugPrint('PlanService: Google Play Store is available');
+    try {
+      final bool available = await _inAppPurchase.isAvailable();
+      if (!available) {
+        debugPrint(
+            'PlanService: Google Play Store NOT available on this device');
+        _isStoreAvailable = false;
+        if (!_initCompleter.isCompleted) _initCompleter.complete();
+        return;
+      }
 
-    // Listen to purchase updates
-    await _purchaseSubscription?.cancel();
-    _purchaseSubscription = _inAppPurchase.purchaseStream.listen(
-      (List<PurchaseDetails> purchaseDetailsList) {
-        debugPrint('PlanService: Received purchase updates: ${purchaseDetailsList.length} items');
-        _handlePurchaseUpdates(purchaseDetailsList);
-      },
-      onDone: () => debugPrint('PlanService: Purchase stream closed'),
-      onError: (error) => debugPrint('PlanService: Purchase stream error: $error'),
-    );
+      _isStoreAvailable = true;
+      debugPrint('PlanService: Google Play Store is available');
 
-    // Load products
-    const Set<String> _kIds = {
-      'cribs_agent_basic',
-      'cribs_agent_standard',
-      'cribs_agent_premium'
-    };
-    
-    debugPrint('PlanService: Querying product details for: $_kIds');
-    
-    final ProductDetailsResponse response =
-        await _inAppPurchase.queryProductDetails(_kIds);
+      // Listen to purchase updates
+      await _purchaseSubscription?.cancel();
+      _purchaseSubscription = _inAppPurchase.purchaseStream.listen(
+        (List<PurchaseDetails> purchaseDetailsList) {
+          debugPrint(
+              'PlanService: Received purchase updates: ${purchaseDetailsList.length} items');
+          _handlePurchaseUpdates(purchaseDetailsList);
+        },
+        onDone: () => debugPrint('PlanService: Purchase stream closed'),
+        onError: (error) =>
+            debugPrint('PlanService: Purchase stream error: $error'),
+      );
 
-    if (response.notFoundIDs.isNotEmpty) {
-      debugPrint('PlanService: CRITICAL - Some products not found in Play Console: ${response.notFoundIDs}');
-    }
+      // Load products
+      const Set<String> _kIds = {
+        'cribs_agent_basic',
+        'cribs_agent_standard',
+        'cribs_agent_premium'
+      };
 
-    if (response.error != null) {
-      debugPrint('PlanService: ERROR querying products: ${response.error!.message}');
-    }
+      debugPrint('PlanService: Querying product details for: $_kIds');
 
-    _products = response.productDetails;
-    debugPrint('PlanService: Successfully loaded ${_products.length} products from Google');
-    for (var product in _products) {
-      debugPrint('PlanService: Found Product: ${product.id} - ${product.title} (${product.price})');
+      final ProductDetailsResponse response =
+          await _inAppPurchase.queryProductDetails(_kIds);
+
+      if (response.notFoundIDs.isNotEmpty) {
+        debugPrint(
+            'PlanService: CRITICAL - Some products not found in Play Console: ${response.notFoundIDs}');
+      }
+
+      if (response.error != null) {
+        debugPrint(
+            'PlanService: ERROR querying products: ${response.error!.message}');
+      }
+
+      _products = response.productDetails;
+      debugPrint(
+          'PlanService: Successfully loaded ${_products.length} products from Google');
+      for (var product in _products) {
+        debugPrint(
+            'PlanService: Found Product: ${product.id} - ${product.title} (${product.price})');
+      }
+    } catch (e) {
+      debugPrint('PlanService: Critical error during IAP initialization: $e');
+    } finally {
+      if (!_initCompleter.isCompleted) {
+        _initCompleter.complete();
+      }
     }
   }
 
   /// Initiate a Google Play purchase
   Future<void> buySubscription(AgentPlan plan) async {
+    // Wait for initialization to complete if it hasn't already
+    if (!_initializationCalled) {
+      initializeInAppPurchase();
+    }
+    await _initCompleter.future;
+
+    if (!_isStoreAvailable) {
+      throw Exception(
+          'Google Play Store is not available on this device or session could not be initialized.');
+    }
+
     // Find the product ID based on plan name or mapping
     final productId = productMappings.entries
         .firstWhere((entry) => entry.value == plan.name,
@@ -160,11 +197,11 @@ class PlanService {
     final product = _products.firstWhere(
       (p) => p.id == productId,
       orElse: () => throw Exception(
-          'Product details not found for $productId in Google Play Store.\n\n'
+          'Product details for "$productId" not found in Store.\n\n'
           'Please ensure:\n'
           '1. The product ID is active in Play Console.\n'
-          '2. You are using a licensed tester account.\n'
-          '3. The app is signed correctly.'),
+          '2. You have added a "Base Plan" and Activated it.\n'
+          '3. You are using a licensed tester account.'),
     );
 
     final PurchaseParam purchaseParam = PurchaseParam(productDetails: product);

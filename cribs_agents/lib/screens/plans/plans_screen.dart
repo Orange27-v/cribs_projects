@@ -88,6 +88,9 @@ class _PlansScreenState extends State<PlansScreen> {
     // Initialize Google Play Billing
     try {
       await _planService.initializeInAppPurchase();
+      if (mounted) {
+        setState(() {}); // Rebuild to refresh IAP status if needed
+      }
     } catch (e) {
       debugPrint('Error initializing IAP: $e');
     }
@@ -292,15 +295,35 @@ class _PlansScreenState extends State<PlansScreen> {
 
 
 
+  bool _isIapBusy = false;
+
   Future<void> _subscribeWithGoogle(AgentPlan plan) async {
+    if (_isIapBusy) return;
+    
+    setState(() => _isIapBusy = true);
+    
     try {
+      // If store is still initializing, this will wait automatically
       await _planService.buySubscription(plan);
       // Actual success handling is done via the purchase stream in PlanService
     } catch (e) {
       if (mounted) {
+        String message = e.toString();
+        if (message.startsWith('Exception: ')) {
+          message = message.replaceFirst('Exception: ', '');
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: kRed),
+          SnackBar(
+            content: Text(message),
+            backgroundColor: kRed,
+            duration: const Duration(seconds: 10),
+            action: SnackBarAction(label: 'OK', textColor: kWhite, onPressed: () {}),
+          ),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isIapBusy = false);
       }
     }
   }

@@ -94,6 +94,11 @@ class GoogleBillingController extends Controller
             // 4. Update Database
             DB::beginTransaction();
 
+            // Fetch platform fee
+            $platformFee = DB::table('platform_settings')
+                ->where('key_name', 'platform_fee')
+                ->value('value') ?? 300.00;
+
             // Mark previous as Expired
             DB::table('paid_subscribers')
                 ->where('agent_id', $agent->agent_id)
@@ -116,6 +121,18 @@ class GoogleBillingController extends Controller
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+
+            // 5. Log Platform Fee
+            if ($platformFee > 0) {
+                DB::table('platform_fee_logs')->insert([
+                    'transaction_reference' => $purchaseToken,
+                    'source_app' => 'agent_app',
+                    'user_id' => $agent->agent_id,
+                    'amount' => $platformFee,
+                    'description' => "Platform fee for Agent Subscription (Plan: {$plan->name}) via Google Play",
+                    'created_at' => now(),
+                ]);
+            }
 
             // Create notification
             DB::table('notifications')->insert([

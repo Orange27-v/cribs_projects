@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'models/onboarding_content.dart';
 import 'widgets/onboarding_title.dart';
-// import 'dart:io';
+import 'dart:io';
 
 const kPrimaryColor = Color(0xFF006BC2);
 const kPrimaryColorDark = Color(0xFF026DE3);
@@ -34,24 +34,24 @@ const kGrey900 = Color.fromARGB(255, 71, 71, 71);
 const kBorderGrey = Color(0xFFE0E0E0);
 
 // --- API Base URLs ---
-// String get _localHost {
-//   if (Platform.isAndroid) {
-//     return '10.0.2.2';
-//   }
-//   return '127.0.0.1';
-// }
+String get _localHost {
+  if (Platform.isAndroid) {
+    return '10.0.2.2';
+  }
+  return '127.0.0.1';
+}
 
-// String get kChatBaseUrl => 'http://$_localHost:5001';
-// String get kBaseUrl => 'http://$_localHost:8000/api';
-// String get kUserBaseUrl => 'http://$_localHost:8000/api/user';
-// String get kAgentBaseUrl => 'http://$_localHost:8000/api/agent';
-// String get kMainBaseUrl => 'http://$_localHost:8000/';
+String get kChatBaseUrl => 'http://$_localHost:5001';
+String get kBaseUrl => 'http://$_localHost:8000/api';
+String get kUserBaseUrl => 'http://$_localHost:8000/api/user';
+String get kAgentBaseUrl => 'http://$_localHost:8000/api/agent';
+String get kMainBaseUrl => 'http://$_localHost:8000/';
 
-const kChatBaseUrl = 'https://node-k8.cribsarena.com';
-const String kBaseUrl = 'https://api-n9.cribsarena.com/api';
-const String kUserBaseUrl = 'https://api-n9.cribsarena.com/api/user';
-const String kAgentBaseUrl = 'https://api-n9.cribsarena.com/api/agent';
-const String kMainBaseUrl = 'https://api-n9.cribsarena.com/';
+// const kChatBaseUrl = 'https://node-k8.cribsarena.com';
+// const String kBaseUrl = 'https://api-n9.cribsarena.com/api';
+// const String kUserBaseUrl = 'https://api-n9.cribsarena.com/api/user';
+// const String kAgentBaseUrl = 'https://api-n9.cribsarena.com/api/agent';
+// const String kMainBaseUrl = 'https://api-n9.cribsarena.com/';
 
 // --- API Keys & Secrets (Public Keys are fine, true secrets should be in backend/environment variables) ---
 const String nairaSymbol = '\u{20A6}';
