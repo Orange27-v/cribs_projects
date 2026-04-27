@@ -94,3 +94,19 @@ Icon?
 # --- References & Credentials ---
 # Ignoring the entire reference folder as it contains sensitive service account keys
 /reference/
+/Docs/
+
+# --- Documentation & Planning ---
+*.md
+!README.md
+*.txt
+!requirements.txt
+
+# --- Archives & Temporary Files ---
+*.zip
+*.rar
+*.7z
+*.bak
+*.temp
+*.tmp
+.DS_Store

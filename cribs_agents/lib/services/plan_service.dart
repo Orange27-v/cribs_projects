@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cribs_agents/constants.dart';
 import 'package:cribs_agents/models/agent_plan.dart';
@@ -19,6 +18,15 @@ class PlanService {
   static List<ProductDetails> _products = [];
   static StreamSubscription<List<PurchaseDetails>>? _purchaseSubscription;
 
+  // Static stream controller for specific purchase results (navigation triggers)
+  static final StreamController<PurchaseResult> _purchaseResultController =
+      StreamController<PurchaseResult>.broadcast();
+
+  static bool verboseLogging = true;
+
+  static Timer? _heartbeatTimer;
+  static int _heartbeatCount = 0;
+
   // New: Synchronization for IAP initialization
   static final Completer<void> _initCompleter = Completer<void>();
   static bool _initializationCalled = false;
@@ -31,9 +39,23 @@ class PlanService {
     'cribs_agent_premium': 'Premium',
   };
 
+  /// Internal logging helper for PlanService
+  static void _log(String message, {bool isVerbose = false, Object? error}) {
+    if (isVerbose && !verboseLogging) return;
+    final timestamp = DateTime.now().toIso8601String().split('T').last.substring(0, 12);
+    debugPrint('[$timestamp] PlanService: $message');
+    if (error != null) {
+      debugPrint('[$timestamp] PlanService: 🚩 ERROR DETAILS: $error');
+    }
+  }
+
   /// Stream of subscription updates for real-time UI updates
   static Stream<Map<String, dynamic>?> get subscriptionStream =>
       _subscriptionController.stream;
+
+  /// Stream of specific purchase results for UI feedback
+  static Stream<PurchaseResult> get purchaseResultStream =>
+      _purchaseResultController.stream;
 
   /// Notify all listeners of subscription change and update cache
   static void notifySubscriptionChange(Map<String, dynamic>? subscription) {
@@ -71,21 +93,10 @@ class PlanService {
           debugPrint('PlanService: Subscription expired during monitoring');
           // Update local status
           final updatedSub = Map<String, dynamic>.from(_cachedSubscription!);
-          updatedSub['status'] = 'Expired'; // Or whatever status means expired
+          updatedSub['status'] = 'Expired'; 
 
-          // Notify (will update cache and stop timer via _checkAndStartMonitoring)
-          notifySubscriptionChange(null); // Or send updated object?
-          // Previous logic in screens seemed to treat null as expired/no-plan.
-          // Let's stick to sending null for now to indicate "No Valid Active Plan".
-          // Or we can send the expired object. PropertiesScreen handles both.
-          // Let's send the object with "Expired" status if that's what backend returns,
-          // but specifically here we detected it locally.
-          // The PropertiesScreen checks `data == null` OR `isBefore(now)`.
-          // So sending the same object is fine, the screen will re-eval date.
-          // But to force a refresh visually, we should probably emit.
-
-          _subscriptionController.add(
-              _cachedSubscription); // Re-emit same data, screens will re-check date
+          notifySubscriptionChange(null); 
+          _subscriptionController.add(_cachedSubscription); 
         }
       } catch (e) {
         debugPrint('PlanService: Error parsing date in monitor: $e');
@@ -93,7 +104,7 @@ class PlanService {
     }
   }
 
-  /// Dispose timer when app functionality might not need it (hard to call in static context, usually app lifecycle)
+  /// Dispose timer when app functionality might not need it
   static void dispose() {
     _monitorTimer?.cancel();
     _purchaseSubscription?.cancel();
@@ -110,8 +121,7 @@ class PlanService {
     try {
       final bool available = await _inAppPurchase.isAvailable();
       if (!available) {
-        debugPrint(
-            'PlanService: Google Play Store NOT available on this device');
+        debugPrint('PlanService: Google Play Store NOT available on this device');
         _isStoreAvailable = false;
         if (!_initCompleter.isCompleted) _initCompleter.complete();
         return;
@@ -124,13 +134,11 @@ class PlanService {
       await _purchaseSubscription?.cancel();
       _purchaseSubscription = _inAppPurchase.purchaseStream.listen(
         (List<PurchaseDetails> purchaseDetailsList) {
-          debugPrint(
-              'PlanService: Received purchase updates: ${purchaseDetailsList.length} items');
+          _log('Received purchase updates: ${purchaseDetailsList.length} items', isVerbose: true);
           _handlePurchaseUpdates(purchaseDetailsList);
         },
-        onDone: () => debugPrint('PlanService: Purchase stream closed'),
-        onError: (error) =>
-            debugPrint('PlanService: Purchase stream error: $error'),
+        onDone: () => _log('Purchase stream closed'),
+        onError: (error) => _log('Purchase stream error', error: error),
       );
 
       // Load products
@@ -140,28 +148,11 @@ class PlanService {
         'cribs_agent_premium'
       };
 
-      debugPrint('PlanService: Querying product details for: $_kIds');
-
       final ProductDetailsResponse response =
           await _inAppPurchase.queryProductDetails(_kIds);
 
-      if (response.notFoundIDs.isNotEmpty) {
-        debugPrint(
-            'PlanService: CRITICAL - Some products not found in Play Console: ${response.notFoundIDs}');
-      }
-
-      if (response.error != null) {
-        debugPrint(
-            'PlanService: ERROR querying products: ${response.error!.message}');
-      }
-
       _products = response.productDetails;
-      debugPrint(
-          'PlanService: Successfully loaded ${_products.length} products from Google');
-      for (var product in _products) {
-        debugPrint(
-            'PlanService: Found Product: ${product.id} - ${product.title} (${product.price})');
-      }
+      debugPrint('PlanService: Successfully loaded ${_products.length} products');
     } catch (e) {
       debugPrint('PlanService: Critical error during IAP initialization: $e');
     } finally {
@@ -173,18 +164,15 @@ class PlanService {
 
   /// Initiate a Google Play purchase
   Future<void> buySubscription(AgentPlan plan) async {
-    // Wait for initialization to complete if it hasn't already
     if (!_initializationCalled) {
       initializeInAppPurchase();
     }
     await _initCompleter.future;
 
     if (!_isStoreAvailable) {
-      throw Exception(
-          'Google Play Store is not available on this device or session could not be initialized.');
+      throw Exception('Google Play Store is not available on this device.');
     }
 
-    // Find the product ID based on plan name or mapping
     final productId = productMappings.entries
         .firstWhere((entry) => entry.value == plan.name,
             orElse: () => const MapEntry('', ''))
@@ -196,12 +184,7 @@ class PlanService {
 
     final product = _products.firstWhere(
       (p) => p.id == productId,
-      orElse: () => throw Exception(
-          'Product details for "$productId" not found in Store.\n\n'
-          'Please ensure:\n'
-          '1. The product ID is active in Play Console.\n'
-          '2. You have added a "Base Plan" and Activated it.\n'
-          '3. You are using a licensed tester account.'),
+      orElse: () => throw Exception('Product details for "$productId" not found.'),
     );
 
     final PurchaseParam purchaseParam = PurchaseParam(productDetails: product);
@@ -210,33 +193,187 @@ class PlanService {
 
   void _handlePurchaseUpdates(List<PurchaseDetails> purchaseDetailsList) async {
     for (var purchaseDetails in purchaseDetailsList) {
+      debugPrint('PlanService: 🔄 Processing Purchase Update for: ${purchaseDetails.productID}');
+      debugPrint('PlanService: Current Status: ${purchaseDetails.status}');
+      debugPrint('PlanService: Purchase ID: ${purchaseDetails.purchaseID}');
+      
+      // PENDING: Show pending status
       if (purchaseDetails.status == PurchaseStatus.pending) {
-        // Show loading in UI?
-      } else if (purchaseDetails.status == PurchaseStatus.error) {
-        debugPrint('PlanService: Purchase error: ${purchaseDetails.error}');
-      } else if (purchaseDetails.status == PurchaseStatus.purchased ||
+        debugPrint('PlanService: ⏳ Purchase is PENDING...');
+        _purchaseResultController.add(PurchaseResult(
+          status: PurchaseStatus.pending,
+          details: purchaseDetails,
+          message: 'Payment is being processed by Google...',
+        ));
+        // Don't complete the purchase yet - wait for Google to confirm
+        continue;
+      }
+      
+      // PURCHASED or RESTORED: Verify with backend IMMEDIATELY
+      if (purchaseDetails.status == PurchaseStatus.purchased ||
           purchaseDetails.status == PurchaseStatus.restored) {
-        // Verify with backend
-        final bool valid = await _verifyGoogleSubscription(purchaseDetails);
-        if (valid) {
-          // Finalize purchase with Google
+        
+        debugPrint('PlanService: ✅ Purchase/Restore detected. Verifying with backend...');
+        
+        // Emit "Awaiting Confirmation" status
+        _purchaseResultController.add(PurchaseResult(
+          status: purchaseDetails.status,
+          details: purchaseDetails,
+          isAcknowledged: false,
+          message: 'Verifying with server...',
+        ));
+        
+        // CRITICAL: Verify with backend BEFORE completing
+        bool verified = await _verifyPurchaseWithBackend(purchaseDetails);
+        
+        if (verified) {
+          debugPrint('PlanService: 🎉 Backend verification SUCCESS');
+          
+          // CRITICAL: Complete the purchase on Google's side
+          // This prevents duplicate purchase attempts
           if (purchaseDetails.pendingCompletePurchase) {
+            debugPrint('PlanService: Completing purchase transaction...');
             await _inAppPurchase.completePurchase(purchaseDetails);
           }
+          
+          // Emit success result
+          _purchaseResultController.add(PurchaseResult(
+            status: purchaseDetails.status,
+            details: purchaseDetails,
+            isAcknowledged: true,
+            message: 'Subscription activated successfully!',
+          ));
+          
+          // Refresh subscription data
+          await getCurrentSubscription();
+          
+        } else {
+          debugPrint('PlanService: ❌ Backend verification FAILED. Starting retry...');
+          
+          // Start heartbeat retry mechanism
+          startVerificationRetry(purchaseDetails);
+          
+          // Keep showing "Awaiting Confirmation" status
+          _purchaseResultController.add(PurchaseResult(
+            status: purchaseDetails.status,
+            details: purchaseDetails,
+            isAcknowledged: false,
+            message: 'Server verification in progress...',
+          ));
+        }
+      }
+      
+      // ERROR: Show error immediately
+      else if (purchaseDetails.status == PurchaseStatus.error) {
+        debugPrint('PlanService: ❌ Purchase ERROR: ${purchaseDetails.error}');
+        _purchaseResultController.add(PurchaseResult(
+          status: PurchaseStatus.error,
+          details: purchaseDetails,
+          message: purchaseDetails.error?.message ?? 'Purchase failed',
+        ));
+        
+        // Complete to clear the transaction
+        if (purchaseDetails.pendingCompletePurchase) {
+          await _inAppPurchase.completePurchase(purchaseDetails);
+        }
+      }
+      
+      // CANCELED: Handle cancellation
+      else if (purchaseDetails.status == PurchaseStatus.canceled) {
+        debugPrint('PlanService: ⚠️ Purchase CANCELED by user');
+        _purchaseResultController.add(PurchaseResult(
+          status: PurchaseStatus.canceled,
+          details: purchaseDetails,
+          message: 'Purchase was cancelled',
+        ));
+        
+        // Complete to clear the transaction
+        if (purchaseDetails.pendingCompletePurchase) {
+          await _inAppPurchase.completePurchase(purchaseDetails);
         }
       }
     }
   }
 
-  Future<bool> _verifyGoogleSubscription(PurchaseDetails purchaseDetails) async {
-    debugPrint('PlanService: Verifying Google Purchase: ${purchaseDetails.purchaseID}');
+  /// Start a heartbeat that retries verification every 10 seconds
+  static void startVerificationRetry(PurchaseDetails purchaseDetails) {
+    stopHeartbeat(); // Clear any existing timer
+    _heartbeatCount = 0;
+    
+    debugPrint('PlanService: 🫀 Starting verification retry heartbeat...');
+    
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      _heartbeatCount++;
+      debugPrint('PlanService: 🫀 Heartbeat #$_heartbeatCount - Retrying verification...');
+      
+      // Stop after 6 attempts (1 minute total)
+      if (_heartbeatCount > 6) {
+        debugPrint('PlanService: 🫀 Heartbeat timeout - stopping retries');
+        stopHeartbeat();
+        // Emit error state so the UI stops spinning
+        _purchaseResultController.add(PurchaseResult(
+          status: PurchaseStatus.error,
+          details: purchaseDetails,
+          message: 'Server verification is taking longer than expected. Please check your internet or try again later.',
+        ));
+        return;
+      }
+      
+      // Retry verification with backend
+      try {
+        bool verified = await PlanService()._verifyPurchaseWithBackend(purchaseDetails);
+        
+        if (verified) {
+          debugPrint('PlanService: 🫀 Heartbeat SUCCESS - Verification completed!');
+          
+          if (purchaseDetails.pendingCompletePurchase) {
+            debugPrint('PlanService: Completing purchase transaction after retry...');
+            await _inAppPurchase.completePurchase(purchaseDetails);
+          }
+          
+          // Emit the success update
+          _purchaseResultController.add(PurchaseResult(
+            status: purchaseDetails.status,
+            details: purchaseDetails,
+            isAcknowledged: true,
+            message: 'Subscription activated successfully!',
+          ));
+          
+          // Refresh subscription data
+          final subscription = await PlanService().getCurrentSubscription();
+          if (subscription != null) {
+            notifySubscriptionChange(subscription);
+          }
+          
+          stopHeartbeat();
+        } else {
+          debugPrint('PlanService: 🫀 Heartbeat - Verification failed, will retry...');
+        }
+      } catch (e) {
+        debugPrint('PlanService: 🫀 Heartbeat error: $e');
+      }
+    });
+  }
+
+  /// Stop the heartbeat timer
+  static void stopHeartbeat() {
+    if (_heartbeatTimer != null) {
+      _heartbeatTimer!.cancel();
+      _heartbeatTimer = null;
+      _heartbeatCount = 0;
+      debugPrint('PlanService: 🫀 Heartbeat stopped');
+    }
+  }
+
+  Future<bool> _verifyPurchaseWithBackend(PurchaseDetails purchaseDetails) async {
+    _log('Attempting server verification for: ${purchaseDetails.purchaseID}', isVerbose: true);
 
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
 
     try {
       final response = await http.post(
-        Uri.parse('$kAgentBaseUrl/subscription/verify-google'),
+        Uri.parse('$kAgentBaseUrl/google-billing/verify'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -246,125 +383,21 @@ class PlanService {
           'purchaseToken': purchaseDetails.verificationData.serverVerificationData,
           'productId': purchaseDetails.productID,
         }),
-      );
+      ).timeout(const Duration(seconds: 15));
+
+      if (verboseLogging) {
+        _log('Verification Status: ${response.statusCode}', isVerbose: true);
+        _log('Verification Body: ${response.body}', isVerbose: true);
+      }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          debugPrint('PlanService: Google Purchase Verified successfully');
-          // Update local state
-          getCurrentSubscription();
-          return true;
-        }
+        return data['success'] == true;
       }
       return false;
     } catch (e) {
-      debugPrint('PlanService: Verification Error: $e');
+      _log('Network verification error', error: e);
       return false;
-    }
-  }
-
-  Future<List<AgentPlan>> fetchPlans() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
-
-    final response = await http.get(
-      Uri.parse('$kAgentBaseUrl/plans'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      if (data['success'] == true) {
-        final List<dynamic> plansJson = data['data'];
-        return plansJson.map((json) => AgentPlan.fromJson(json)).toList();
-      } else {
-        throw Exception(data['message'] ?? 'Failed to load plans');
-      }
-    } else {
-      throw Exception('Failed to load plans: ${response.statusCode}');
-    }
-  }
-
-  /// Fetch the platform fee from the server
-  Future<double> fetchPlatformFee() async {
-    try {
-      final response = await http.get(
-        Uri.parse('$kBaseUrl/general/platform-fee'),
-        headers: {'Accept': 'application/json'},
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true) {
-          return (data['data']['platform_fee'] as num).toDouble();
-        }
-      }
-      return 300.0; // Default fallback
-    } catch (e) {
-      debugPrint('Error fetching platform fee: $e');
-      return 300.0; // Default fallback
-    }
-  }
-
-  Future<Map<String, dynamic>> initializeSubscription(int planId) async {
-    debugPrint('PlanService: Initializing subscription for planId: $planId');
-
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
-
-    if (token == null || token.isEmpty) {
-      throw Exception('Authentication token not found. Please log in again.');
-    }
-
-    final url = '$kAgentBaseUrl/subscription/initialize';
-    debugPrint('PlanService: Request URL: $url');
-    debugPrint('PlanService: Token present: ${token.isNotEmpty}');
-
-    try {
-      final response = await http
-          .post(
-            Uri.parse(url),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: jsonEncode({'plan_id': planId}),
-          )
-          .timeout(const Duration(seconds: 30));
-
-      debugPrint('PlanService: Init Response Status: ${response.statusCode}');
-      debugPrint('PlanService: Init Response Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['data'] != null) {
-          return data['data']; // Contains authorization_url and reference
-        } else {
-          throw Exception(data['message'] ?? 'Payment initialization failed');
-        }
-      } else if (response.statusCode == 401) {
-        throw Exception('Session expired. Please log in again.');
-      } else if (response.statusCode == 422) {
-        final data = jsonDecode(response.body);
-        throw Exception(data['message'] ?? 'Validation error');
-      } else {
-        throw Exception(
-            'Server error (${response.statusCode}). Please try again.');
-      }
-    } on TimeoutException {
-      debugPrint('PlanService: Request timed out');
-      rethrow;
-    } on SocketException catch (e) {
-      debugPrint('PlanService: Network error: $e');
-      rethrow;
-    } catch (e) {
-      debugPrint('PlanService: Error: $e');
-      rethrow;
     }
   }
 
@@ -381,17 +414,13 @@ class PlanService {
         },
       );
 
-      debugPrint(
-          'getCurrentSubscription response: ${response.statusCode} - ${response.body}');
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['success'] == true) {
           final subData = data['data'];
           _cachedSubscription = subData as Map<String, dynamic>?;
           _checkAndStartMonitoring();
-          notifySubscriptionChange(
-              subData); // Ensure stream is updated initially too
+          notifySubscriptionChange(subData);
           return subData;
         }
       }
@@ -400,6 +429,27 @@ class PlanService {
       debugPrint('getCurrentSubscription error: $e');
       return null;
     }
+  }
+
+  Future<List<AgentPlan>> fetchPlans() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token');
+    final response = await http.get(
+      Uri.parse('$kAgentBaseUrl/plans'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data['success'] == true) {
+        final List<dynamic> plansJson = data['data'];
+        return plansJson.map((json) => AgentPlan.fromJson(json)).toList();
+      }
+    }
+    throw Exception('Failed to load plans');
   }
 
   Future<List<Map<String, dynamic>>> getSubscriptionHistory() async {
@@ -454,4 +504,37 @@ class PlanService {
     }
   }
 
+  Future<double> fetchPlatformFee() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$kBaseUrl/general/platform-fee'),
+        headers: {'Accept': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          return (data['data']['platform_fee'] as num).toDouble();
+        }
+      }
+      return 300.0; // Default fallback
+    } catch (e) {
+      debugPrint('Error fetching platform fee: $e');
+      return 300.0; // Default fallback
+    }
+  }
+}
+
+class PurchaseResult {
+  final PurchaseStatus status;
+  final PurchaseDetails? details;
+  final String? message;
+  final bool isAcknowledged;
+
+  PurchaseResult({
+    required this.status,
+    this.details,
+    this.message,
+    this.isAcknowledged = false,
+  });
 }

@@ -4,7 +4,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../constants.dart';
 import '../../widgets/widgets.dart';
-import 'package:cribs_agents/screens/properties/properties_screen.dart';
 import 'package:cribs_agents/services/auth_service.dart'; // Import AuthService
 
 class WelcomeScreen extends StatelessWidget {
@@ -34,6 +33,52 @@ class _WelcomeScreenContentState extends State<_WelcomeScreenContent> {
     super.initState();
   }
 
+  Future<void> _completeOnboarding(BuildContext context, {int initialIndex = 0}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('onboarded_agent', true);
+
+    try {
+      final authService = AuthService();
+      final userData = await authService.fetchUserData();
+
+      final latitudeValue = userData['data']['latitude'];
+      final longitudeValue = userData['data']['longitude'];
+
+      final double userLatitude = latitudeValue is double
+          ? latitudeValue
+          : double.tryParse(latitudeValue?.toString() ?? '0') ?? 0.0;
+
+      final double userLongitude = longitudeValue is double
+          ? longitudeValue
+          : double.tryParse(longitudeValue?.toString() ?? '0') ?? 0.0;
+
+      if (!context.mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => MainLayout(
+            userLatitude: userLatitude,
+            userLongitude: userLongitude,
+            initialIndex: initialIndex,
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Error fetching user data in WelcomeScreen: $e');
+      if (!context.mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => MainLayout(
+            userLatitude: 0.0,
+            userLongitude: 0.0,
+            initialIndex: initialIndex,
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -58,52 +103,7 @@ class _WelcomeScreenContentState extends State<_WelcomeScreenContent> {
         const SizedBox(height: 40),
         PrimaryButton(
           text: 'Get Started',
-          onPressed: () async {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setBool('onboarded_agent', true);
-
-            // Fetch user data to get latitude and longitude for HomeScreen
-            try {
-              final authService = AuthService();
-              final userData = await authService.fetchUserData();
-
-              // Safely parse latitude and longitude from API response
-              final latitudeValue = userData['data']['latitude'];
-              final longitudeValue = userData['data']['longitude'];
-
-              final double userLatitude = latitudeValue is double
-                  ? latitudeValue
-                  : double.tryParse(latitudeValue?.toString() ?? '0') ?? 0.0;
-
-              final double userLongitude = longitudeValue is double
-                  ? longitudeValue
-                  : double.tryParse(longitudeValue?.toString() ?? '0') ?? 0.0;
-
-              if (!context.mounted) return;
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => MainLayout(
-                    userLatitude: userLatitude,
-                    userLongitude: userLongitude,
-                  ),
-                ),
-              );
-            } catch (e) {
-              debugPrint('Error fetching user data in WelcomeScreen: $e');
-              // Fallback to HomeScreen without coordinates or show an error
-              if (!context.mounted) return;
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const MainLayout(
-                    userLatitude: 0.0,
-                    userLongitude: 0.0,
-                  ),
-                ),
-              );
-            }
-          },
+          onPressed: () => _completeOnboarding(context),
         ),
         const SizedBox(height: 16),
         OutlinedActionButton(
@@ -113,12 +113,7 @@ class _WelcomeScreenContentState extends State<_WelcomeScreenContent> {
             colorFilter: const ColorFilter.mode(kBlack, BlendMode.srcIn),
             height: 24,
           ),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const PropertiesScreen()),
-            );
-          },
+          onPressed: () => _completeOnboarding(context, initialIndex: 2),
         ),
       ],
     );

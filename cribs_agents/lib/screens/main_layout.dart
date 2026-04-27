@@ -11,11 +11,13 @@ import 'package:flutter/material.dart';
 class MainLayout extends StatefulWidget {
   final double userLatitude;
   final double userLongitude;
+  final int initialIndex;
 
   const MainLayout({
     super.key,
     required this.userLatitude,
     required this.userLongitude,
+    this.initialIndex = 0,
   });
 
   @override
@@ -23,13 +25,14 @@ class MainLayout extends StatefulWidget {
 }
 
 class _MainLayoutState extends State<MainLayout> {
-  int _currentIndex = 0;
+  late int _currentIndex;
 
   late final List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
+    _currentIndex = widget.initialIndex;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AgentProvider>().fetchAgentProfile();
     });

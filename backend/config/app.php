@@ -57,7 +57,7 @@ return [
     'url' => env('APP_URL', 'http://localhost'),
 
     'asset_url' => env('ASSET_URL'),
-    'android_package_name' => env('ANDROID_PACKAGE_NAME', 'com.cribs_arena.cribs_agents'),
+    'android_package_name' => env('ANDROID_PACKAGE_NAME', 'com.cribsarena.cribsagent'),
 
     /*
     |--------------------------------------------------------------------------

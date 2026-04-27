@@ -119,3 +119,9 @@ android {
 ### Final AAB Locations:
 - **Cribs Arena**: `cribs_arena/build/app/outputs/bundle/release/app-release.aab`
 - **Cribs Agents**: `cribs_agents/build/app/outputs/bundle/release/app-release.aab`
+
+
+
+AGENT APP : https://play.google.com/apps/internaltest/4700815476948669930
+
+USER APP : https://play.google.com/apps/internaltest/4701267393889207529

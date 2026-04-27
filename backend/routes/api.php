@@ -60,6 +60,9 @@ Route::get('/legal/{type}', [LegalDocumentController::class, 'show']);
 // Paystack Webhook
 Route::post('/paystack/webhook', [WebhookController::class, 'handleWebhook']);
 
+// Google Play RTDN Webhook
+Route::post('/webhooks/google-play', [\App\Http\Controllers\General\GoogleWebhookController::class, 'handleRTDN']);
+
 // Payment Keys
 Route::get('/payment-keys', [PaymentController::class, 'getPaymentKeys']);
 

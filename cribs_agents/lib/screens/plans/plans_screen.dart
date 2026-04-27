@@ -10,6 +10,8 @@ import 'package:cribs_agents/screens/plans/widget/subscription_info_modal.dart';
 import 'package:cribs_agents/screens/plans/widget/active_subscription_banner.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
+import 'package:cribs_agents/screens/plans/billing_status_screen.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
 
 class PlansScreen extends StatefulWidget {
   const PlansScreen({super.key});
@@ -23,13 +25,16 @@ class _PlansScreenState extends State<PlansScreen> {
   final PlanService _planService = PlanService();
   Map<String, dynamic>? _currentSubscription;
   bool _isLoadingSubscription = true;
+  bool _isStatusScreenOpen = false;
   double _platformFee = 300.0;
 
   StreamSubscription<Map<String, dynamic>?>? _streamSubscription;
+  StreamSubscription<PurchaseResult>? _purchaseResultSubscription;
 
   @override
   void dispose() {
     _streamSubscription?.cancel();
+    _purchaseResultSubscription?.cancel();
     super.dispose();
   }
 
@@ -53,6 +58,32 @@ class _PlansScreenState extends State<PlansScreen> {
           _currentSubscription = subscription;
           _isLoadingSubscription = false;
         });
+      }
+    });
+
+    // Handle purchase results (Navigation to Status Screen)
+    _purchaseResultSubscription =
+        PlanService.purchaseResultStream.listen((result) {
+      if (mounted) {
+        debugPrint('PlansScreen: Purchase result received: ${result.status}');
+        
+        // Don't show status screen for cancellations unless specifically requested, 
+        // but for Success, Error, and Pending, it's very helpful.
+        // Navigation Logic: Only push if not already on the status screen
+        if (result.status != PurchaseStatus.canceled && !_isStatusScreenOpen) {
+          _isStatusScreenOpen = true;
+          debugPrint('PlansScreen: Pushing BillingStatusScreen...');
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => BillingStatusScreen(result: result),
+            ),
+          ).then((_) {
+            // Reset flag when screen is popped
+            _isStatusScreenOpen = false;
+            debugPrint('PlansScreen: BillingStatusScreen closed.');
+          });
+        }
       }
     });
 
