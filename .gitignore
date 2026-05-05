@@ -52,6 +52,8 @@ chatdb/Archive.zip
 /backend/storage/
 /backend/node_modules/
 /backend/.phpunit.result.cache
+/prompts/
+
 
 # --- Node.js / ChatDB ---
 /chatdb/node_modules/

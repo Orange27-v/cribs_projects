@@ -14,8 +14,8 @@ class FCMService
 
     public function __construct()
     {
-        $this->projectId = env('FIREBASE_PROJECT_ID');
-        $this->serviceAccountPath = storage_path('app/' . env('FCM_SERVICE_ACCOUNT_PATH'));
+        $this->projectId = config('services.firebase.project_id');
+        $this->serviceAccountPath = storage_path('app/' . config('services.firebase.credentials'));
 
         Log::info('📲 FCM Service initialized', [
             'project_id' => $this->projectId,
@@ -57,7 +57,7 @@ class FCMService
     /**
      * Send notifications to multiple tokens.
      */
-    public function sendMany(array $tokens, string $title, string $body, array $data = [], string $receiverType = 'user')
+    public function sendMany(array $tokens, $title, $body, array $data = [], string $receiverType = 'user')
     {
         Log::info('📲 FCM sendMany called', [
             'token_count' => count($tokens),
@@ -84,6 +84,11 @@ class FCMService
         // Determine correct channel ID
         $channelId = $receiverType === 'agent' ? 'cribs_agents_channel_id' : 'cribs_arena_channel_id';
 
+        // Ensure title and body are available as strings
+        $titleStr = (is_string($title) || is_numeric($title)) ? (string)$title : json_encode($title);
+        $bodyStr = (is_string($body) || is_numeric($body)) ? (string)$body : json_encode($body);
+        $notificationPayload = ['title' => $titleStr, 'body' => $bodyStr];
+
         $chunks = array_chunk($tokens, 100);
         $successCount = 0;
         $failCount = 0;
@@ -95,17 +100,10 @@ class FCMService
                     continue;
                 }
 
-                // Ensure title and body are strings
-                $titleStr = is_string($title) ? $title : json_encode($title);
-                $bodyStr = is_string($body) ? $body : json_encode($body);
-
-                // Base notification payload
-                $notificationPayload = ['title' => $titleStr, 'body' => $bodyStr];
-
                 // Add title and body to data payload for foreground handling
-                $messageData = $data; // Use a fresh copy for each token
-                $messageData['title'] = $title;
-                $messageData['body'] = $body;
+                $messageData = $data; 
+                $messageData['title'] = $titleStr;
+                $messageData['body'] = $bodyStr;
 
                 // ✅ IMPORTANT: FCM requires all data values to be strings
                 $messageData = array_map(function ($value) use ($token) {
@@ -156,16 +154,29 @@ class FCMService
                         $status = $response->status();
                         $errorBody = $response->json();
 
-                        Log::error('📲 FCM send failed', [
-                            'status' => $status,
-                            'body' => $errorBody,
-                            'token_truncated' => substr($token, 0, 15) . '...',
-                        ]);
+                        // Check if this is an "Unregistered" or "Invalid" token
+                        $errorCode = $errorBody['error']['details'][0]['errorCode'] ?? null;
+                        
+                        // v1 API returns UNREGISTERED (404) for stale tokens 
+                        // and sometimes INVALID_ARGUMENT (400) for malformed ones
+                        // or SENDER_ID_MISMATCH (403) if the token belongs to another project
+                        $isStaleToken = ($status === 404 && $errorCode === 'UNREGISTERED') || 
+                                       ($status === 400 && $errorCode === 'INVALID_ARGUMENT') ||
+                                       ($status === 403 && $errorCode === 'SENDER_ID_MISMATCH');
 
-                        // Handle unregistered tokens (Stale)
-                        if ($status === 404 || (isset($errorBody['error']['details'][0]['errorCode']) && $errorBody['error']['details'][0]['errorCode'] === 'UNREGISTERED')) {
-                            Log::info('📲 Deleting unregistered token', ['token_truncated' => substr($token, 0, 15) . '...']);
+                        if ($isStaleToken) {
+                            Log::info('📲 Deleting stale FCM token', [
+                                'reason' => $errorCode,
+                                'token_truncated' => substr($token, 0, 15) . '...',
+                            ]);
                             DeviceToken::where('fcm_token', $token)->delete();
+                        } else {
+                            // Only log as ERROR if it's a real server/config/quota problem
+                            Log::error('📲 FCM send failed', [
+                                'status' => $status,
+                                'body' => $errorBody,
+                                'token_truncated' => substr($token, 0, 15) . '...',
+                            ]);
                         }
                     }
                 } catch (\Exception $e) {
@@ -186,7 +197,7 @@ class FCMService
     /**
      * Send a notification to a specific user or agent.
      */
-    public function sendToUserOrAgent(int $id, string $type, string $title, string $body, array $data = [])
+    public function sendToUserOrAgent(int $id, string $type, $title, $body, array $data = [])
     {
         $modelClass = $type === 'agent' ? \App\Models\Agent::class : \App\Models\User::class;
         $idField = $type === 'agent' ? 'agent_id' : 'user_id';

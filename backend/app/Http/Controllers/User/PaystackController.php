@@ -23,7 +23,7 @@ class PaystackController extends Controller
 
         try {
             $response = Http::timeout(30)->withHeaders([
-                'Authorization' => 'Bearer ' . env('PAYSTACK_SECRET_KEY'),
+                'Authorization' => 'Bearer ' . config('services.paystack.secret_key'),
                 'Content-Type' => 'application/json',
             ])->post('https://api.paystack.co/transaction/initialize', [
                         'email' => $email,
@@ -61,7 +61,7 @@ class PaystackController extends Controller
     {
         try {
             $response = Http::timeout(30)->withHeaders([
-                'Authorization' => 'Bearer ' . env('PAYSTACK_SECRET_KEY'),
+                'Authorization' => 'Bearer ' . config('services.paystack.secret_key'),
             ])->get("https://api.paystack.co/transaction/verify/$reference");
 
             Log::info('Paystack Verification Response: ' . $response->body());

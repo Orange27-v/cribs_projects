@@ -316,8 +316,8 @@ class _BillingStatusScreenState extends State<BillingStatusScreen> {
     final message = error.message.toLowerCase();
 
     // Check for specific developer errors often returned as text/messages
-    if (message.contains('developererror') || code.contains('developer_error')) {
-      return 'Technical Configuration Error. This usually happens if you already have an active or pending transaction for this plan on your Google account. Please wait a few minutes and try again.';
+    if (message.contains('developererror') || code.contains('developer_error') || code == '5') {
+      return 'Technical Configuration Error (Code 5). Common causes:\n• Your account is not a "License Tester" in Play Console.\n• You already have an active/pending subscription for this plan.\n• App signature mismatch with Play Console.\n\nRaw message: ${error.message}';
     }
     
     if (code == 'purchase_error') {

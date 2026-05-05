@@ -373,7 +373,7 @@ class PlanService {
 
     try {
       final response = await http.post(
-        Uri.parse('$kAgentBaseUrl/google-billing/verify'),
+        Uri.parse('$kAgentBaseUrl/subscription/verify-google'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',

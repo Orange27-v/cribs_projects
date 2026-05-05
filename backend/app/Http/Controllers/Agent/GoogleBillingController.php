@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Google\Client;
 use Google\Service\AndroidPublisher;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\SubscriptionActivatedMail;
+use App\Services\FCMService;
 
 class GoogleBillingController extends Controller
 {
@@ -41,7 +44,7 @@ class GoogleBillingController extends Controller
 
         // 1. Mapping Check
         if (!isset($this->productMapping[$productId])) {
-            Log::error("GoogleBilling: Unmapped productId: $productId");
+            Log::error("GoogleBilling: Unmapped productId: $productId. Available mappings: " . json_encode($this->productMapping));
             return response()->json(['success' => false, 'message' => 'Invalid product identifier.'], 400);
         }
 
@@ -61,6 +64,7 @@ class GoogleBillingController extends Controller
                 return response()->json(['success' => false, 'message' => 'System configuration error. Please contact support.'], 500);
             }
             
+            Log::info("GoogleBilling: Loading auth config from: $serviceAccountPath");
             $client->setAuthConfig($serviceAccountPath);
             $client->addScope(AndroidPublisher::ANDROIDPUBLISHER);
 
@@ -69,11 +73,11 @@ class GoogleBillingController extends Controller
             $packageName = 'com.cribsarena.cribsagent';
             
             if (!$packageName) {
-                Log::error("GoogleBilling: Package name not configured in .env or config");
-                return response()->json(['success' => false, 'message' => 'App verification failed. Please try again later.'], 500);
+                Log::error("GoogleBilling: Package name not configured. Using fallback: com.cribsarena.cribsagent");
+                $packageName = 'com.cribsarena.cribsagent';
             }
 
-            Log::info("GoogleBilling: Fetching subscription from Google Play API...");
+            Log::info("GoogleBilling: Fetching subscription for Package: $packageName, Product: $productId");
 
             // 3. Fetch from Google (Source of Truth)
             try {
@@ -174,6 +178,35 @@ class GoogleBillingController extends Controller
                         'created_at' => now(),
                         'updated_at' => now(),
                     ]);
+
+                    // 7. Send Push Notification and Email
+                    try {
+                        $fcmService = new FCMService();
+                        $fcmService->sendToUserOrAgent(
+                            $agent->agent_id, 
+                            'agent', 
+                            'Plan Activated', 
+                            "Your {$plan->name} plan is now active until " . date('M d, Y', $expiryMillis/1000),
+                            ['type' => 'subscription']
+                        );
+                    } catch (\Exception $fcmError) {
+                        Log::error("GoogleBilling: Push notification failed: " . $fcmError->getMessage());
+                    }
+
+                    try {
+                        $subData = [
+                            'name' => $agent->first_name ?? 'Agent',
+                            'plan_name' => $plan->name,
+                            'amount' => $plan->price,
+                            'start_date' => now()->format('Y-m-d'),
+                            'end_date' => $endDate,
+                            'reference' => $purchaseToken,
+                        ];
+                        Mail::to($agent->email)->send(new SubscriptionActivatedMail($subData));
+                        Log::info("GoogleBilling: Confirmation email sent to {$agent->email}");
+                    } catch (\Exception $mailError) {
+                        Log::error("GoogleBilling: Email failed: " . $mailError->getMessage());
+                    }
 
                     Log::info("GoogleBilling: Database records created successfully");
                 } else {

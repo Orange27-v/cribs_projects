@@ -86,7 +86,7 @@ class WebhookController extends Controller
     {
         try {
             // Verify the webhook signature
-            $paystackSecret = env('PAYSTACK_SECRET_KEY');
+            $paystackSecret = config('services.paystack.secret_key');
             if (!$this->verifyWebhookSignature($request, $paystackSecret)) {
                 Log::warning('Paystack webhook signature verification failed.');
 

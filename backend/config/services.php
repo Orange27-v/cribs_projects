@@ -41,8 +41,13 @@ return [
         'credentials' => env('FCM_SERVICE_ACCOUNT_PATH'),
     ],
 
-    'resend' => [
-        'key' => env('RESEND_API_KEY'),
+    'chat' => [
+        'url' => env('CHAT_SERVER_URL', 'http://127.0.0.1:5001'),
+        'key' => env('CHAT_API_KEY'),
+    ],
+
+    'laravel' => [
+        'api_key' => env('LARAVEL_API_KEY'),
     ],
 
 ];

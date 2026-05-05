@@ -17,7 +17,7 @@ class ChatSyncHelper
     public static function syncProfile($id, $name = null, $avatar = null)
     {
         try {
-            $chatServerUrl = env('CHAT_SERVER_URL', 'http://127.0.0.1:5001');
+            $chatServerUrl = config('services.chat.url');
 
             $payload = [];
             if ($name)
@@ -36,7 +36,7 @@ class ChatSyncHelper
 
             $response = Http::timeout(5)
                 ->withHeaders([
-                    'x-api-key' => env('CHAT_API_KEY'),
+                    'x-api-key' => config('services.chat.key'),
                 ])
                 ->put("{$chatServerUrl}/conversations/participant/{$id}", $payload);
 

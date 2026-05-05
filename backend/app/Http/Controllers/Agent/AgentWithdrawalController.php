@@ -32,7 +32,7 @@ class AgentWithdrawalController extends Controller
 
     public function __construct()
     {
-        $this->paystackSecretKey = config('services.paystack.secret_key', env('PAYSTACK_SECRET_KEY'));
+        $this->paystackSecretKey = config('services.paystack.secret_key');
     }
 
     /**

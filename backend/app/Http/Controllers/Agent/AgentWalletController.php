@@ -309,7 +309,7 @@ class AgentWalletController extends Controller
             $reference = WalletTransaction::generateReference('DEP');
 
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . env('PAYSTACK_SECRET_KEY'),
+                'Authorization' => 'Bearer ' . config('services.paystack.secret_key'),
                 'Content-Type' => 'application/json',
             ])->post('https://api.paystack.co/transaction/initialize', [
                         'email' => $agent->email,
@@ -367,7 +367,7 @@ class AgentWalletController extends Controller
         try {
             // 1. Verify with Paystack
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . env('PAYSTACK_SECRET_KEY'),
+                'Authorization' => 'Bearer ' . config('services.paystack.secret_key'),
             ])->get("https://api.paystack.co/transaction/verify/$reference");
 
             if (!$response->successful() || $response->json('data.status') !== 'success') {
