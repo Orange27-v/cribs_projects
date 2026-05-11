@@ -111,6 +111,18 @@ class PlanService {
     _subscriptionController.close();
   }
 
+  /// Restore past purchases from Google Play
+  Future<void> restorePurchases() async {
+    _log('Initiating Restore Purchases...');
+    try {
+      await _inAppPurchase.restorePurchases();
+      _log('Restore Purchases request sent to Google');
+    } catch (e) {
+      _log('Restore Purchases failed', error: e);
+      rethrow;
+    }
+  }
+
   /// Initialize In-App Purchases and load products
   Future<void> initializeInAppPurchase() async {
     if (_initializationCalled) return _initCompleter.future;

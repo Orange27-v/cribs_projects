@@ -40,12 +40,16 @@ class GoogleBillingController extends Controller
         $productId = $request->productId;
         $agent = Auth::user();
 
-        Log::info("GoogleBilling: Verification request for productId: $productId, agent: {$agent->agent_id}");
+        Log::info("GoogleBilling: Starting verification", [
+            'productId' => $productId,
+            'purchaseToken' => substr($purchaseToken, 0, 20) . '...',
+            'agent_id' => $agent->agent_id ?? 'unknown'
+        ]);
 
         // 1. Mapping Check
         if (!isset($this->productMapping[$productId])) {
-            Log::error("GoogleBilling: Unmapped productId: $productId. Available mappings: " . json_encode($this->productMapping));
-            return response()->json(['success' => false, 'message' => 'Invalid product identifier.'], 400);
+            Log::error("GoogleBilling: Unmapped productId: $productId");
+            return response()->json(['success' => false, 'message' => 'Invalid product identifier.'], 422);
         }
 
         $planId = $this->productMapping[$productId];
@@ -60,86 +64,136 @@ class GoogleBillingController extends Controller
             $serviceAccountPath = storage_path('app/google-service-account.json');
             
             if (!file_exists($serviceAccountPath)) {
-                Log::error("GoogleBilling: Service account file not found at: $serviceAccountPath");
-                return response()->json(['success' => false, 'message' => 'System configuration error. Please contact support.'], 500);
+                Log::error("GoogleBilling: Service account file missing at: $serviceAccountPath");
+                return response()->json(['success' => false, 'message' => 'Server configuration error.'], 500);
             }
             
-            Log::info("GoogleBilling: Loading auth config from: $serviceAccountPath");
             $client->setAuthConfig($serviceAccountPath);
             $client->addScope(AndroidPublisher::ANDROIDPUBLISHER);
-
             $service = new AndroidPublisher($client);
-            // HARDCODED for maximum resilience against config/env issues during testing
-            $packageName = 'com.cribsarena.cribsagent';
+            $primaryPackageName = 'com.cribsarena.cribsagent';
+            $fallbackPackageName = 'com.cribsarena.agents';
             
-            if (!$packageName) {
-                Log::error("GoogleBilling: Package name not configured. Using fallback: com.cribsarena.cribsagent");
-                $packageName = 'com.cribsarena.cribsagent';
+            $subscription = null;
+            $isSubscription = true;
+            $usedPackageName = $primaryPackageName;
+
+            // 3. Attempt Verification Logic with Modern v2 + Legacy Fallbacks
+            $verifyWithPackage = function($pName) use ($service, $productId, $purchaseToken, &$isSubscription) {
+                // Path A: Modern Subscriptions v2 (Recommended for Billing Library 5+)
+                try {
+                    Log::info("GoogleBilling: [Path A - Modern v2] Verifying: $pName");
+                    // Note: v2.get only needs pName and token
+                    $subV2 = $service->purchases_subscriptionsv2->get($pName, $purchaseToken);
+                    
+                    Log::info("GoogleBilling: [Path A - Modern v2] SUCCESS. State: " . $subV2->getSubscriptionState());
+                    
+                    // Convert v2 structure to our local format
+                    $compat = new \stdClass();
+                    $lineItems = $subV2->getLineItems();
+                    $item = !empty($lineItems) ? $lineItems[0] : null;
+                    
+                    if (!$item) {
+                        throw new \Exception("No line items found in v2 purchase.");
+                    }
+
+                    // Map v2 fields to our internal logic (v2 returns ISO 8601 strings)
+                    $expiryStr = $item->getExpiryTime();
+                    $compat->expiryTimeMillis = strtotime($expiryStr) * 1000;
+                    
+                    $compat->acknowledgementState = $subV2->getAcknowledgementState() === 'ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED' ? 1 : 0;
+                    $compat->purchaseState = $subV2->getSubscriptionState() === 'SUBSCRIPTION_STATE_ACTIVE' ? 0 : 1;
+                    $compat->productId = $item->getProductId();
+                    
+                    return [$compat, true];
+                } catch (\Exception $e) {
+                    Log::warning("GoogleBilling: [Path A - Modern v2] FAILED: " . $e->getMessage());
+                    
+                    // Path B: Legacy Subscription v1
+                    try {
+                        Log::info("GoogleBilling: [Path B - Legacy v1] Verifying: $pName | $productId");
+                        $subV1 = $service->purchases_subscriptions->get($pName, $productId, $purchaseToken);
+                        Log::info("GoogleBilling: [Path B - Legacy v1] SUCCESS");
+                        return [$subV1, true];
+                    } catch (\Exception $e2) {
+                        Log::warning("GoogleBilling: [Path B - Legacy v1] FAILED: " . $e2->getMessage());
+                        
+                        // Path C: One-time Product / Prepaid
+                        try {
+                            Log::info("GoogleBilling: [Path C - Product] Verifying: $pName | $productId");
+                            $prod = $service->purchases_products->get($pName, $productId, $purchaseToken);
+                            Log::info("GoogleBilling: [Path C - Product] SUCCESS");
+                            
+                            $compat = new \stdClass();
+                            $compat->acknowledgementState = $prod->getAcknowledgementState();
+                            $compat->expiryTimeMillis = time() * 1000 + (30 * 24 * 60 * 60 * 1000); 
+                            $compat->purchaseState = $prod->getPurchaseState();
+                            return [$compat, false];
+                        } catch (\Exception $e3) {
+                            Log::error("GoogleBilling: [Path C - Product] FAILED: " . $e3->getMessage());
+                            return [null, false];
+                        }
+                    }
+                }
+            };
+
+            // Try Primary Package
+            [$subscription, $isSubscription] = $verifyWithPackage($primaryPackageName);
+            
+            // If failed, try Fallback Package
+            if (!$subscription) {
+                Log::info("GoogleBilling: Retrying with fallback package name: $fallbackPackageName");
+                $usedPackageName = $fallbackPackageName;
+                [$subscription, $isSubscription] = $verifyWithPackage($fallbackPackageName);
             }
 
-            Log::info("GoogleBilling: Fetching subscription for Package: $packageName, Product: $productId");
-
-            // 3. Fetch from Google (Source of Truth)
-            try {
-                $subscription = $service->purchases_subscriptions->get($packageName, $productId, $purchaseToken);
-            } catch (\Google\Service\Exception $ge) {
-                $errorMsg = $ge->getMessage();
-                $statusCode = $ge->getCode();
-                
-                Log::error("GoogleBilling: Google API Error [$statusCode]: $errorMsg");
-                
-                if ($statusCode == 401 || $statusCode == 403) {
-                    return response()->json([
-                        'success' => false, 
-                        'message' => 'Server authentication failed. We are looking into this.'
-                    ], 403);
-                }
-                
-                if ($statusCode == 404) {
-                    return response()->json([
-                        'success' => false, 
-                        'message' => 'Purchase not found. The token may be invalid or expired.'
-                    ], 404);
-                }
-                
-                return response()->json(['success' => false, 'message' => "Google API error: $errorMsg"], 500);
+            if (!$subscription) {
+                Log::error("GoogleBilling: Final verification failure. All paths exhausted.");
+                return response()->json([
+                    'success' => false, 
+                    'message' => 'Google Play could not find this purchase. Ensure you are using the same Google Account that made the purchase.',
+                    'debug_productId' => $productId,
+                    'debug_package' => $primaryPackageName
+                ], 404);
             }
 
-            Log::info("GoogleBilling: Google API response received. Acknowledgment state: " . $subscription->getAcknowledgementState());
+            $packageName = $usedPackageName;
 
-            // 4. Validate Expiry (with 5-minute grace period for sandbox/drift)
-            $expiryMillis = (int) $subscription->getExpiryTimeMillis();
-            $gracePeriodMillis = 5 * 60 * 1000;
-            
-            if (($expiryMillis + $gracePeriodMillis) < (time() * 1000)) {
-                Log::warning("GoogleBilling: Subscription truly expired at: " . date('Y-m-d H:i:s', $expiryMillis / 1000));
-                return response()->json(['success' => false, 'message' => 'Subscription has expired.'], 400);
+            // 4. Validate Expiry / Purchase State
+            $expiryMillis = (int) $subscription->expiryTimeMillis; 
+            if (isset($subscription->getExpiryTimeMillis)) {
+                $expiryMillis = (int) $subscription->getExpiryTimeMillis();
+            }
+
+            $ackState = $subscription->acknowledgementState;
+            if (isset($subscription->getAcknowledgementState)) {
+                $ackState = $subscription->getAcknowledgementState();
+            }
+
+            Log::info("GoogleBilling: Verification Success. Package: $packageName, Type: " . ($isSubscription ? 'Subscription' : 'Product'));
+
+            if ($expiryMillis < (time() * 1000)) {
+                Log::warning("GoogleBilling: Purchase expired at: " . date('Y-m-d H:i:s', $expiryMillis / 1000));
+                return response()->json(['success' => false, 'message' => 'Purchase has expired.'], 400);
             }
 
             $endDate = date('Y-m-d H:i:s', $expiryMillis / 1000);
-            Log::info("GoogleBilling: Valid subscription until: $endDate");
 
             // 5. Database Transaction
             DB::beginTransaction();
             try {
-                // Check for duplicate processing (Token-only check for robustness)
                 $existingRecord = DB::table('paid_subscribers')
                     ->where('paystack_reference', $purchaseToken)
                     ->first();
 
                 if (!$existingRecord) {
-                    Log::info("GoogleBilling: NEW subscription cycle - Recording in database");
+                    Log::info("GoogleBilling: NEW purchase - Recording in database");
 
-                    // Expire all existing active plans
                     DB::table('paid_subscribers')
                         ->where('agent_id', $agent->agent_id)
                         ->where('status', 'Active')
-                        ->update([
-                            'status' => 'Expired',
-                            'updated_at' => now()
-                        ]);
+                        ->update(['status' => 'Expired', 'updated_at' => now()]);
 
-                    // Insert new subscription record
                     DB::table('paid_subscribers')->insert([
                         'agent_id' => $agent->agent_id,
                         'plan_id' => $planId,
@@ -154,12 +208,9 @@ class GoogleBillingController extends Controller
                     ]);
 
                     // Log platform fee
-                    $platformFee = DB::table('platform_settings')
-                        ->where('key_name', 'platform_fee')
-                        ->value('value') ?? 300.00;
-                        
+                    $platformFee = DB::table('platform_settings')->where('key_name', 'platform_fee')->value('value') ?? 300.00;
                     DB::table('platform_fee_logs')->insert([
-                        'transaction_reference' => $purchaseToken . '_' . $expiryMillis,
+                        'transaction_reference' => $purchaseToken . '_' . time(),
                         'source_app' => 'agent_app',
                         'user_id' => $agent->agent_id,
                         'amount' => $platformFee,
@@ -167,7 +218,7 @@ class GoogleBillingController extends Controller
                         'created_at' => now(),
                     ]);
 
-                    // Send notification
+                    // Notifications
                     DB::table('notifications')->insert([
                         'receiver_id' => $agent->agent_id,
                         'receiver_type' => 'agent',
@@ -179,100 +230,49 @@ class GoogleBillingController extends Controller
                         'updated_at' => now(),
                     ]);
 
-                    // 7. Send Push Notification and Email
                     try {
                         $fcmService = new FCMService();
-                        $fcmService->sendToUserOrAgent(
-                            $agent->agent_id, 
-                            'agent', 
-                            'Plan Activated', 
-                            "Your {$plan->name} plan is now active until " . date('M d, Y', $expiryMillis/1000),
-                            ['type' => 'subscription']
-                        );
-                    } catch (\Exception $fcmError) {
-                        Log::error("GoogleBilling: Push notification failed: " . $fcmError->getMessage());
-                    }
+                        $fcmService->sendToUserOrAgent($agent->agent_id, 'agent', 'Plan Activated', "Your {$plan->name} plan is now active.", ['type' => 'subscription']);
+                    } catch (\Exception $e) {}
 
-                    try {
-                        $subData = [
-                            'name' => $agent->first_name ?? 'Agent',
-                            'plan_name' => $plan->name,
-                            'amount' => $plan->price,
-                            'start_date' => now()->format('Y-m-d'),
-                            'end_date' => $endDate,
-                            'reference' => $purchaseToken,
-                        ];
-                        Mail::to($agent->email)->send(new SubscriptionActivatedMail($subData));
-                        Log::info("GoogleBilling: Confirmation email sent to {$agent->email}");
-                    } catch (\Exception $mailError) {
-                        Log::error("GoogleBilling: Email failed: " . $mailError->getMessage());
-                    }
-
-                    Log::info("GoogleBilling: Database records created successfully");
                 } else {
-                    Log::info("GoogleBilling: Subscription cycle already processed (idempotent)");
+                    Log::info("GoogleBilling: Already processed (idempotent)");
                 }
 
-                // 6. CRITICAL: Acknowledge with Google (ALWAYS attempt, even if already acknowledged)
-                $ackState = $subscription->getAcknowledgementState();
-                Log::info("GoogleBilling: Acknowledgment state before: $ackState (0=unacknowledged, 1=acknowledged)");
-                
+                // 6. Acknowledge with Google
                 if ($ackState == 0) {
-                    Log::info("GoogleBilling: Sending acknowledgment to Google...");
-                    
                     try {
-                        $acknowledgeRequest = new \Google\Service\AndroidPublisher\SubscriptionPurchasesAcknowledgeRequest();
-                        $service->purchases_subscriptions->acknowledge(
-                            $packageName, 
-                            $productId, 
-                            $purchaseToken, 
-                            $acknowledgeRequest
-                        );
-                        
-                        Log::info("GoogleBilling: ✅ Successfully acknowledged purchase token: " . substr($purchaseToken, 0, 15) . "...");
-                        
+                        if ($isSubscription) {
+                            $ackReq = new \Google\Service\AndroidPublisher\SubscriptionPurchasesAcknowledgeRequest();
+                            $service->purchases_subscriptions->acknowledge($packageName, $productId, $purchaseToken, $ackReq);
+                        } else {
+                            $ackReq = new \Google\Service\AndroidPublisher\ProductPurchasesAcknowledgeRequest();
+                            $service->purchases_products->acknowledge($packageName, $productId, $purchaseToken, $ackReq);
+                        }
+                        Log::info("GoogleBilling: ✅ Acknowledged successfully");
                     } catch (\Exception $ackError) {
-                        // Log but don't fail - acknowledgment might have succeeded on Google's side
-                        Log::error("GoogleBilling: Acknowledgment call failed: " . $ackError->getMessage());
-                        
-                        // Rollback database changes if acknowledgment fails
-                        DB::rollBack();
-                        return response()->json([
-                            'success' => false, 
-                            'message' => 'Failed to acknowledge with Google: ' . $ackError->getMessage()
-                        ], 500);
+                        Log::error("GoogleBilling: Acknowledgment failed: " . $ackError->getMessage());
+                        // We don't rollback here as the database is consistent with the purchase
                     }
-                } else {
-                    Log::info("GoogleBilling: Purchase already acknowledged (state: $ackState)");
                 }
 
                 DB::commit();
-                
-                Log::info("GoogleBilling: ✅ Complete verification success for agent {$agent->agent_id}");
-                
                 return response()->json([
                     'success' => true, 
                     'message' => 'Subscription verified and activated.',
-                    'expiry_date' => $endDate,
-                    'plan_name' => $plan->name
+                    'expiry_date' => $endDate
                 ]);
 
             } catch (\Exception $dbError) {
                 DB::rollBack();
-                Log::error("GoogleBilling: Database error: " . $dbError->getMessage());
-                return response()->json([
-                    'success' => false, 
-                    'message' => 'Failed to activate your plan. Please contact support.'
-                ], 500);
+                Log::error("GoogleBilling: DB Error: " . $dbError->getMessage());
+                return response()->json(['success' => false, 'message' => 'Database sync failed.'], 500);
             }
 
         } catch (\Exception $e) {
-            Log::error("GoogleBilling: Unexpected error: " . $e->getMessage());
-            Log::error($e->getTraceAsString());
-            return response()->json([
-                'success' => false, 
-                'message' => 'An unexpected system error occurred. Please try again later.'
-            ], 500);
+            Log::error("GoogleBilling: Critical error: " . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Unexpected error: ' . $e->getMessage()], 500);
         }
+
     }
 }

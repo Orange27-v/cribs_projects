@@ -192,6 +192,11 @@ class _PlansScreenState extends State<PlansScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: kBlack87),
         actions: [
+          IconButton(
+            onPressed: _restorePurchases,
+            icon: const Icon(Icons.restore, size: 20),
+            tooltip: 'Restore Purchases',
+          ),
           if (_isLoadingSubscription)
             const Padding(
               padding: EdgeInsets.all(16.0),
@@ -327,6 +332,35 @@ class _PlansScreenState extends State<PlansScreen> {
 
 
   bool _isIapBusy = false;
+
+  Future<void> _restorePurchases() async {
+    if (_isIapBusy) return;
+
+    setState(() => _isIapBusy = true);
+
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Checking Google Play for past purchases...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      await _planService.restorePurchases();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Restore failed: $e'),
+            backgroundColor: kRed,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isIapBusy = false);
+      }
+    }
+  }
 
   Future<void> _subscribeWithGoogle(AgentPlan plan) async {
     if (_isIapBusy) return;
