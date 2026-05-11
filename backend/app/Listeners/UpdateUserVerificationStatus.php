@@ -55,14 +55,23 @@ class UpdateUserVerificationStatus
                     if ($verification->type === 'nin' || $verification->type === 'vnin') {
                         $agent->nin_verification = 1;
                         $agent->save();
-                        Log::info("Agent ID {$agent->id} NIN verification status updated to verified.");
+                        Log::info("Agent ID {$agent->id} NIN verification status updated to verified in cribs_agents table.", [
+                            'agent_email' => $agent->email,
+                            'verification_id' => $verification->id
+                        ]);
                     } elseif ($verification->type === 'bvn') {
                         $agent->bvn_verification = 1;
                         $agent->save();
-                        Log::info("Agent ID {$agent->id} BVN verification status updated to verified.");
+                        Log::info("Agent ID {$agent->id} BVN verification status updated to verified in cribs_agents table.", [
+                            'agent_email' => $agent->email,
+                            'verification_id' => $verification->id
+                        ]);
                     }
                 } else {
-                    Log::warning("Agent not found for verified verification ID: " . $verification->id);
+                    Log::warning("Agent NOT found for verified verification record.", [
+                        'receiver_id' => $verification->receiver_id,
+                        'verification_id' => $verification->id
+                    ]);
                 }
             }
         }

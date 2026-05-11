@@ -36,6 +36,23 @@ class AgentWalletController extends Controller
             // Get or create wallet for agent
             $wallet = Wallet::getOrCreate($agent->agent_id, 'agent');
 
+            // Real-time verification check
+            $isNinVerified = (int) ($agent->nin_verification ?? 0) === 1 || 
+                DB::table('verifications')
+                    ->where('receiver_id', (string)$agent->id)
+                    ->where('receiver_type', 'agent')
+                    ->whereIn('type', ['nin', 'vnin'])
+                    ->where('status', 'verified')
+                    ->exists();
+
+            $isBvnVerified = (int) ($agent->bvn_verification ?? 0) === 1 || 
+                DB::table('verifications')
+                    ->where('receiver_id', (string)$agent->id)
+                    ->where('receiver_type', 'agent')
+                    ->where('type', 'bvn')
+                    ->where('status', 'verified')
+                    ->exists();
+
             return response()->json([
                 'success' => true,
                 'message' => 'Wallet retrieved successfully',
@@ -50,8 +67,8 @@ class AgentWalletController extends Controller
                         'currency' => $wallet->currency,
                     ],
                     'agent' => [
-                        'nin_verification' => (int) $agent->nin_verification,
-                        'bvn_verification' => (int) $agent->bvn_verification,
+                        'nin_verification' => $isNinVerified ? 1 : 0,
+                        'bvn_verification' => $isBvnVerified ? 1 : 0,
                     ]
                 ]
             ], 200);

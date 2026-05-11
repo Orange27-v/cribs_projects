@@ -386,6 +386,9 @@ class AgentWithdrawalController extends Controller
         $agent = Auth::guard('agent')->user();
         $withdrawalRequest = null;
         $recipient = null;
+        $amount = 0;
+        $platformFee = 0;
+        $netAmount = 0;
 
         if (!$agent) {
             return response()->json([
@@ -394,8 +397,24 @@ class AgentWithdrawalController extends Controller
             ], 401);
         }
 
-        // Check verification status
-        if (($agent->nin_verification ?? 0) !== 1 || ($agent->bvn_verification ?? 0) !== 1) {
+        // Check verification status (with database fallback for sync issues)
+        $isNinVerified = ($agent->nin_verification ?? 0) === 1 || 
+            DB::table('verifications')
+                ->where('receiver_id', (string)$agent->id)
+                ->where('receiver_type', 'agent')
+                ->whereIn('type', ['nin', 'vnin'])
+                ->where('status', 'verified')
+                ->exists();
+
+        $isBvnVerified = ($agent->bvn_verification ?? 0) === 1 || 
+            DB::table('verifications')
+                ->where('receiver_id', (string)$agent->id)
+                ->where('receiver_type', 'agent')
+                ->where('type', 'bvn')
+                ->where('status', 'verified')
+                ->exists();
+
+        if (!$isNinVerified || !$isBvnVerified) {
             return response()->json([
                 'success' => false,
                 'message' => 'Please verify your NIN and BVN to complete withdrawal'

@@ -1,0 +1,18 @@
+#!/usr/bin/expect -f
+
+set timeout 300
+set password "eQr4y&%Rl_ew5yLR"
+set host "169.255.57.125"
+
+# Update AgentWalletController.php
+spawn scp -o StrictHostKeyChecking=no /Users/apple/Documents/project/backend/app/Http/Controllers/Agent/AgentWalletController.php root@$host:/home/apin9cribsarena/public_html/app/Http/Controllers/Agent/AgentWalletController.php
+
+expect {
+    "*password:*" {
+        send "$password\r"
+    }
+    "*Password:*" {
+        send "$password\r"
+    }
+}
+expect eof
