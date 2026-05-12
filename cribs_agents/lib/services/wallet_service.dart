@@ -36,6 +36,7 @@ class WalletService {
         return {
           'success': true,
           'wallet': responseData['data']?['wallet'],
+          'agent': responseData['data']?['agent'],
         };
       } else if (response.statusCode == 401) {
         await _tokenStorage.clearToken();

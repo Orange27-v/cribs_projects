@@ -325,6 +325,7 @@ class _PlansScreenState extends State<PlansScreen> {
     showCheckoutSheet(
       context: context,
       plan: plan,
+      platformFee: _platformFee,
       onPayWithGoogle: () => _subscribeWithGoogle(plan),
     );
   }

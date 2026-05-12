@@ -6,6 +6,8 @@ import 'package:cribs_agents/widgets/widgets.dart';
 import 'package:cribs_agents/services/wallet_service.dart';
 import 'package:cribs_agents/services/withdrawal_service.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:cribs_agents/provider/agent_provider.dart';
 
 // Widgets
 import 'widgets/balance_card.dart';
@@ -116,9 +118,21 @@ class _WithdrawScreenState extends State<WithdrawScreen>
             _availableBalance = (wallet?['available_balance'] ?? 0).toDouble();
             _pendingBalance = (wallet?['pending_balance'] ?? 0).toDouble();
 
-            final agent = walletResult['agent'];
-            _isVerified = (agent?['nin_verification'] == 1 &&
-                agent?['bvn_verification'] == 1);
+            final agentData = walletResult['agent'];
+            
+            // Check verification status from wallet response first
+            if (agentData != null) {
+              _isVerified = (agentData['nin_verification'] == 1 || agentData['nin_verification'] == true) &&
+                  (agentData['bvn_verification'] == 1 || agentData['bvn_verification'] == true);
+            } else {
+              // Fallback to AgentProvider if wallet response is missing agent data
+              final agentProvider = Provider.of<AgentProvider>(context, listen: false);
+              if (agentProvider.hasAgent) {
+                _isVerified = agentProvider.agent!.isNinVerified && agentProvider.agent!.isBvnVerified;
+              } else {
+                _isVerified = false;
+              }
+            }
           } else {
             _errorMessage = walletResult['message'];
           }

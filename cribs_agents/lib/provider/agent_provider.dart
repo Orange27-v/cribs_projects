@@ -156,6 +156,6 @@ class AgentProvider with ChangeNotifier {
   /// Check if agent is verified (NIN or BVN)
   bool get isVerified {
     if (_agent == null) return false;
-    return _agent!.isNinVerified || _agent!.isBvnVerified;
+    return _agent!.isNinVerified && _agent!.isBvnVerified;
   }
 }
