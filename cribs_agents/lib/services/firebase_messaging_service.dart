@@ -211,7 +211,7 @@ class FirebaseMessagingService {
     // Check for camelCase (e.g., inspectionId) and snake_case (e.g., inspection_id)
     final String snakeKey = '${keyBase}_id';
     final String camelKey =
-        '${keyBase}${keyBase[0].toUpperCase()}${keyBase.substring(1)}Id';
+        '$keyBase${keyBase[0].toUpperCase()}${keyBase.substring(1)}Id';
 
     return data[snakeKey]?.toString() ??
         data[camelKey]?.toString() ??

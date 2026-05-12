@@ -154,14 +154,14 @@ class PlanService {
       );
 
       // Load products
-      const Set<String> _kIds = {
+      const Set<String> kIds = {
         'cribs_agent_basic',
         'cribs_agent_standard',
         'cribs_agent_premium'
       };
 
       final ProductDetailsResponse response =
-          await _inAppPurchase.queryProductDetails(_kIds);
+          await _inAppPurchase.queryProductDetails(kIds);
 
       _products = response.productDetails;
       debugPrint('PlanService: Successfully loaded ${_products.length} products');
