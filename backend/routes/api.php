@@ -59,6 +59,7 @@ Route::get('/legal/{type}', [LegalDocumentController::class, 'show']);
 
 // Paystack Webhook
 Route::post('/paystack/webhook', [WebhookController::class, 'handleWebhook']);
+Route::post('/paystack/approve-transfer', [WebhookController::class, 'approveTransfer']);
 
 // Google Play RTDN Webhook
 Route::post('/webhooks/google-play', [\App\Http\Controllers\General\GoogleWebhookController::class, 'handleRTDN']);

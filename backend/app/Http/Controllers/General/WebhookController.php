@@ -370,6 +370,41 @@ class WebhookController extends Controller
         }
     }
 
+    /**
+     * Handle Paystack Transfer Approval requests.
+     * This is called by Paystack when a transfer is initiated and requires approval.
+     */
+    public function approveTransfer(Request $request)
+    {
+        try {
+            // Verify the signature for security
+            $paystackSecret = config('services.paystack.secret_key');
+            if (!$this->verifyWebhookSignature($request, $paystackSecret)) {
+                Log::warning('Paystack transfer approval signature verification failed.');
+                return response()->json(['status' => 'error', 'message' => 'Signature verification failed'], 401);
+            }
+
+            $payload = $request->all();
+            Log::info('Paystack transfer approval request received:', $payload);
+
+            // Paystack expects a 200 OK to approve the transfer.
+            // You can add additional logic here to check if the transfer is authorized 
+            // in your internal database (e.g. check WithdrawalRequest status).
+            
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Transfer approved'
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Paystack transfer approval processing failed: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Internal server error'
+            ], 500);
+        }
+    }
+
     private function verifyWebhookSignature(Request $request, $paystackSecret)
     {
         $signature = $request->header('x-paystack-signature');
